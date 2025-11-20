@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -85,16 +86,18 @@ func generateHTML(filename string, puzzles []*board.Board, difficulties []int, t
 	defer file.Close()
 
 	// Determine theme-specific values
-	var titlePrefix, bodyFont, headingFont string
+	var titlePrefix, bodyFont, headingFont, themeClass string
 	switch strings.ToLower(theme) {
 	case "princess":
 		titlePrefix = "Princess Puzzle"
-		bodyFont = "'Comic Sans MS', cursive"
-		headingFont = "'Brush Script MT', cursive"
+		bodyFont = "'Georgia', 'Times New Roman', serif"
+		headingFont = "'Playfair Display', 'Georgia', serif"
+		themeClass = "princess-theme"
 	default:
 		titlePrefix = "Sudoku Puzzle"
 		bodyFont = "Arial, sans-serif"
 		headingFont = "Arial, sans-serif"
+		themeClass = ""
 	}
 
 	// Write HTML header
@@ -186,8 +189,8 @@ func generateHTML(filename string, puzzles []*board.Board, difficulties []int, t
         }
     </style>
 </head>
-<body>
-`, titlePrefix+"s", bodyFont, headingFont)
+<body class="%s">
+`, titlePrefix+"s", bodyFont, headingFont, themeClass)
 	if err != nil {
 		return err
 	}
@@ -300,6 +303,30 @@ func runGen(cmd *cobra.Command, args []string) error {
 
 	// Write HTML file if output was specified
 	if outputHTML {
+		// Sort puzzles by difficulty (ascending order)
+		type puzzleWithDifficulty struct {
+			puzzle     *board.Board
+			difficulty int
+		}
+		puzzleList := make([]puzzleWithDifficulty, len(puzzles))
+		for i := 0; i < len(puzzles); i++ {
+			puzzleList[i] = puzzleWithDifficulty{
+				puzzle:     puzzles[i],
+				difficulty: difficulties[i],
+			}
+		}
+		sort.Slice(puzzleList, func(i, j int) bool {
+			return puzzleList[i].difficulty < puzzleList[j].difficulty
+		})
+
+		// Extract sorted puzzles and difficulties
+		sortedPuzzles := make([]*board.Board, len(puzzleList))
+		sortedDifficulties := make([]int, len(puzzleList))
+		for i := 0; i < len(puzzleList); i++ {
+			sortedPuzzles[i] = puzzleList[i].puzzle
+			sortedDifficulties[i] = puzzleList[i].difficulty
+		}
+
 		// Expand wildcards in filename if needed
 		filename := outputFile
 		if strings.Contains(filename, "*") {
@@ -313,7 +340,7 @@ func runGen(cmd *cobra.Command, args []string) error {
 			filename = filename + ".html"
 		}
 
-		err := generateHTML(filename, puzzles, difficulties, theme)
+		err := generateHTML(filename, sortedPuzzles, sortedDifficulties, theme)
 		if err != nil {
 			return fmt.Errorf("failed to write HTML file: %w", err)
 		}
