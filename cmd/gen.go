@@ -11,6 +11,7 @@ import (
 
 	"github.com/rybkr/sudoku/internal/board"
 	"github.com/rybkr/sudoku/internal/generator"
+	"github.com/rybkr/sudoku/internal/solver"
 	"github.com/spf13/cobra"
 )
 
@@ -18,6 +19,7 @@ var (
 	numPuzzles int
 	clueCount  string
 	outputFile string
+	theme      string
 	timeout    time.Duration
 )
 
@@ -37,6 +39,7 @@ Examples:
 	genCmd.Flags().IntVarP(&numPuzzles, "number", "n", 1, "Number of puzzles to generate")
 	genCmd.Flags().StringVarP(&clueCount, "clueCount", "c", fmt.Sprintf("%d", generator.DefaultClueCount), "Number of clues 17-80 or range like 28:32")
 	genCmd.Flags().StringVarP(&outputFile, "output", "o", "", "Output file (e.g., puzzles.html)")
+	genCmd.Flags().StringVarP(&theme, "theme", "t", "", "Theme for HTML output (e.g., princess)")
 	genCmd.Flags().DurationVar(&timeout, "timeout", 10*time.Second, "Generation timeout per puzzle")
 
 	rootCmd.AddCommand(genCmd)
@@ -74,12 +77,25 @@ func parseClueCountRange(s string) (min, max int, err error) {
 }
 
 // generateHTML creates an HTML file with puzzles, one per page
-func generateHTML(filename string, puzzles []*board.Board, solutions []*board.Board) error {
+func generateHTML(filename string, puzzles []*board.Board, difficulties []int, theme string) error {
 	file, err := os.Create(filename)
 	if err != nil {
 		return fmt.Errorf("failed to create HTML file: %w", err)
 	}
 	defer file.Close()
+
+	// Determine theme-specific values
+	var titlePrefix, bodyFont, headingFont string
+	switch strings.ToLower(theme) {
+	case "princess":
+		titlePrefix = "Princess Puzzle"
+		bodyFont = "'Comic Sans MS', cursive"
+		headingFont = "'Brush Script MT', cursive"
+	default:
+		titlePrefix = "Sudoku Puzzle"
+		bodyFont = "Arial, sans-serif"
+		headingFont = "Arial, sans-serif"
+	}
 
 	// Write HTML header
 	_, err = fmt.Fprintf(file, `<!DOCTYPE html>
@@ -87,10 +103,10 @@ func generateHTML(filename string, puzzles []*board.Board, solutions []*board.Bo
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sudoku Puzzles</title>
+    <title>%s</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
+            font-family: %s;
             max-width: 800px;
             margin: 0 auto;
             padding: 20px;
@@ -107,9 +123,17 @@ func generateHTML(filename string, puzzles []*board.Board, solutions []*board.Bo
             page-break-after: auto;
         }
         h1 {
+            font-family: %s;
             color: #333;
-            margin-bottom: 30px;
+            margin-bottom: 10px;
             text-align: center;
+        }
+        .difficulty {
+            text-align: center;
+            color: #555;
+            font-size: 1.1em;
+            margin-bottom: 30px;
+            font-weight: bold;
         }
         h2 {
             color: #666;
@@ -117,12 +141,17 @@ func generateHTML(filename string, puzzles []*board.Board, solutions []*board.Bo
             margin-bottom: 15px;
             font-size: 1.2em;
         }
+        .puzzle-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 30px 0;
+        }
         .sudoku-grid {
             display: inline-block;
             border: 3px solid #000;
-            margin: 20px auto;
             font-family: 'Courier New', monospace;
-            font-size: 24px;
+            font-size: 28px;
             line-height: 1.5;
         }
         .sudoku-grid table {
@@ -130,8 +159,8 @@ func generateHTML(filename string, puzzles []*board.Board, solutions []*board.Bo
             margin: 0 auto;
         }
         .sudoku-grid td {
-            width: 40px;
-            height: 40px;
+            width: 50px;
+            height: 50px;
             text-align: center;
             vertical-align: middle;
             border: 1px solid #333;
@@ -158,21 +187,21 @@ func generateHTML(filename string, puzzles []*board.Board, solutions []*board.Bo
     </style>
 </head>
 <body>
-`)
+`, titlePrefix+"s", bodyFont, headingFont)
 	if err != nil {
 		return err
 	}
 
-	// Write each puzzle on its own page
+	// Write each puzzle on its own page (without solutions)
 	for i := 0; i < len(puzzles); i++ {
 		_, err = fmt.Fprintf(file, `    <div class="page">
-        <h1>Sudoku Puzzle #%d</h1>
-        <h2>Puzzle</h2>
-        %s
-        <h2>Solution</h2>
-        %s
+        <h1>%s #%d</h1>
+        <div class="difficulty">Difficulty: %d</div>
+        <div class="puzzle-container">
+            %s
+        </div>
     </div>
-`, i+1, boardToHTML(puzzles[i]), boardToHTML(solutions[i]))
+`, titlePrefix, i+1, difficulties[i], boardToHTML(puzzles[i]))
 		if err != nil {
 			return err
 		}
@@ -200,7 +229,7 @@ func boardToHTML(b *board.Board) string {
 
 			if val == board.EmptyCell {
 				cellClass = "empty"
-				cellContent = "·"
+				cellContent = ""
 			} else {
 				cellContent = fmt.Sprintf("%d", val)
 			}
@@ -231,7 +260,7 @@ func runGen(cmd *cobra.Command, args []string) error {
 
 	// Prepare for HTML output if output file is specified
 	var puzzles []*board.Board
-	var solutions []*board.Board
+	var difficulties []int
 	outputHTML := outputFile != ""
 
 	// Generate puzzles
@@ -252,13 +281,16 @@ func runGen(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("generation failed: %w", err)
 		}
 
+		// Calculate difficulty
+		difficulty := solver.Difficulty(puzzle)
+
 		if outputHTML {
 			// Store puzzles for HTML output
 			puzzles = append(puzzles, puzzle)
-			solutions = append(solutions, solution)
+			difficulties = append(difficulties, difficulty)
 		} else {
 			// Print to console
-			fmt.Printf("Puzzle #%d (Clues: %d):\n", i+1, selectedClueCount)
+			fmt.Printf("Puzzle #%d (Clues: %d, Difficulty: %d):\n", i+1, selectedClueCount, difficulty)
 			fmt.Println(puzzle.Format())
 			fmt.Println("\nSolution:")
 			fmt.Println(solution.Format())
@@ -281,7 +313,7 @@ func runGen(cmd *cobra.Command, args []string) error {
 			filename = filename + ".html"
 		}
 
-		err := generateHTML(filename, puzzles, solutions)
+		err := generateHTML(filename, puzzles, difficulties, theme)
 		if err != nil {
 			return fmt.Errorf("failed to write HTML file: %w", err)
 		}

@@ -19,15 +19,14 @@ func (s *Solver) traceDifficulty() int {
     cell, candidates := s.FindMRVCell()
     if len(candidates) == 0 {
         // If no tiles can be placed, nothing more can be done.
-        // We will define the difficulty as the number of empty cells remaining.
-        return s.Board.EmptyCount()
+        return 0
     }
 
     score := 0
     for _, candidate := range candidates {
         s.Board.SetForce(cell, candidate)
         score += 1 + s.traceDifficulty()
-        s.Board.SetForce(cell, board.EmptyCell)
+        s.Board.Clear(cell)
     }
     return score
 }
