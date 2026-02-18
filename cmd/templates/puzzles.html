@@ -81,11 +81,12 @@
             color: transparent;
         }
 
-        /* Standard layout: bold lines every third row/column define the 3×3 boxes. */
-        .sudoku-grid tr:nth-child(3n) td {
+        /* Standard layout only: bold lines every third row/column define the 3×3 boxes.
+           Jigsaw grids use per-cell border classes instead. */
+        .sudoku-grid:not(.jigsaw-grid) tr:nth-child(3n) td {
             border-bottom: 3px solid black;
         }
-        .sudoku-grid td:nth-child(3n) {
+        .sudoku-grid:not(.jigsaw-grid) td:nth-child(3n) {
             border-right: 3px solid black;
         }
 

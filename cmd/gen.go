@@ -126,7 +126,11 @@ func boardToHTML(b *board.Board) template.HTML {
 	isJigsaw := layout.Type == "jigsaw"
 
 	var sb strings.Builder
-	sb.WriteString(`<div class="sudoku-grid"><table>`)
+	gridClass := "sudoku-grid"
+	if isJigsaw {
+		gridClass += " jigsaw-grid"
+	}
+	fmt.Fprintf(&sb, `<div class="%s"><table>`, gridClass)
 	for row := range 9 {
 		sb.WriteString("<tr>")
 		for col := range 9 {
@@ -228,14 +232,11 @@ func generateHTML(filename string, puzzles []*board.Board, difficulties []int, t
 }
 
 func runGen(cmd *cobra.Command, args []string) error {
-	// Resolve the board layout from the --type flag.
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-	var layout *board.Layout
+
+	// Validate --type early before entering the generation loop.
 	switch boardType {
-	case "jigsaw":
-		layout = board.RandomJigsawLayout(rng)
-	case "standard", "":
-		layout = board.StandardLayout()
+	case "jigsaw", "standard", "":
 	default:
 		return fmt.Errorf("unknown board type %q: must be standard or jigsaw", boardType)
 	}
@@ -265,6 +266,14 @@ func runGen(cmd *cobra.Command, args []string) error {
 		selectedClueCount := minClues
 		if maxClues > minClues {
 			selectedClueCount = minClues + rng.Intn(maxClues-minClues+1)
+		}
+
+		// Generate a fresh layout per puzzle so each jigsaw has unique regions.
+		var layout *board.Layout
+		if boardType == "jigsaw" {
+			layout = board.RandomJigsawLayout(rng)
+		} else {
+			layout = board.StandardLayout()
 		}
 
 		opts := generator.DefaultOptions(selectedClueCount)
