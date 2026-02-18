@@ -1,0 +1,5 @@
+# Generated HTML output from 'sudoku gen --output'
+*.html
+
+# Preserve committed HTML templates
+!cmd/templates/*.html

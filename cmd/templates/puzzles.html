@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.TitlePrefix}}s</title>
+    <style>
+        body {
+            font-family: {{.BodyFont}};
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .page {
+            page-break-after: always;
+            background-color: white;
+            padding: 40px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .page:last-child {
+            page-break-after: auto;
+        }
+        h1 {
+            font-family: {{.HeadingFont}};
+            color: #333;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        .difficulty {
+            text-align: center;
+            color: #555;
+            font-size: 1.1em;
+            margin-bottom: 30px;
+            font-weight: bold;
+        }
+        .puzzle-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 30px 0;
+        }
+        .sudoku-grid {
+            display: inline-block;
+            border: 3px solid #000;
+            font-family: 'Courier New', monospace;
+            font-size: 28px;
+            line-height: 1.5;
+        }
+        .sudoku-grid table {
+            border-collapse: collapse;
+            margin: 0 auto;
+        }
+        .sudoku-grid td {
+            width: 50px;
+            height: 50px;
+            text-align: center;
+            vertical-align: middle;
+            border: 1px solid #333;
+            padding: 0;
+        }
+        .sudoku-grid td.empty {
+            color: #ccc;
+        }
+        .sudoku-grid tr:nth-child(3n) td {
+            border-bottom: 2px solid #000;
+        }
+        .sudoku-grid td:nth-child(3n) {
+            border-right: 2px solid #000;
+        }
+        @media print {
+            body {
+                background-color: white;
+            }
+            .page {
+                margin-bottom: 0;
+                box-shadow: none;
+            }
+        }
+    </style>
+</head>
+<body class="{{.ThemeClass}}">
+{{range .PuzzlePages}}
+    <div class="page">
+        <h1>{{$.TitlePrefix}} #{{.PuzzleNumber}}</h1>
+        <div class="difficulty">Difficulty: {{.Difficulty}}</div>
+        <div class="puzzle-container">
+            {{.GridHTML}}
+        </div>
+    </div>
+{{end}}
+</body>
+</html>

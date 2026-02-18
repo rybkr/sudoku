@@ -79,8 +79,6 @@ func (g *Generator) Generate() (puzzle *board.Board, solution *board.Board, err 
 
 		return puzzle, solution, nil
 	}
-
-	return nil, nil, ErrGenerationFailed
 }
 
 // generateSolution creates a complete valid Sudoku board.

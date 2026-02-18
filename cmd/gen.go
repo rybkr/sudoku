@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"embed"
 	"fmt"
+	"html/template"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -10,11 +12,31 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/rybkr/sudoku/internal/board"
 	"github.com/rybkr/sudoku/internal/generator"
 	"github.com/rybkr/sudoku/internal/solver"
-	"github.com/spf13/cobra"
 )
+
+//go:embed templates/*.html
+var templateFS embed.FS
+
+// PuzzlePage holds pre-rendered data for a single puzzle page in the HTML template.
+type PuzzlePage struct {
+	PuzzleNumber int
+	Difficulty   int
+	GridHTML     template.HTML
+}
+
+// TemplateData holds data for HTML template rendering.
+type TemplateData struct {
+	TitlePrefix string
+	BodyFont    string
+	HeadingFont string
+	ThemeClass  string
+	PuzzlePages []PuzzlePage
+}
 
 var (
 	numPuzzles int
@@ -22,6 +44,20 @@ var (
 	outputFile string
 	theme      string
 	timeout    time.Duration
+)
+
+const (
+	// difficultyMin is the lowest acceptable solver difficulty score (0–100).
+	// Puzzles scoring below this threshold are too easy and are discarded.
+	difficultyMin = 67
+	// difficultyMax is the highest acceptable solver difficulty score (0–100).
+	// Puzzles scoring above this threshold are considered unsolvable by normal
+	// human techniques and are discarded.
+	difficultyMax = 100
+	// difficultyMaxRetries caps how many consecutive out-of-range puzzles the
+	// generator will discard before giving up, preventing an infinite loop when
+	// the requested clue count cannot yield puzzles in the target difficulty range.
+	difficultyMaxRetries = 50
 )
 
 func init() {
@@ -77,7 +113,28 @@ func parseClueCountRange(s string) (min, max int, err error) {
 	return 0, 0, fmt.Errorf("invalid clue count format: %s (use format like '32' or '28:32')", s)
 }
 
-// generateHTML creates an HTML file with puzzles, one per page
+// boardToHTML converts a board to a safe HTML table for embedding in the template.
+func boardToHTML(b *board.Board) template.HTML {
+	var sb strings.Builder
+	sb.WriteString(`<div class="sudoku-grid"><table>`)
+	for row := range 9 {
+		sb.WriteString("<tr>")
+		for col := range 9 {
+			pos := board.MakePos(row, col)
+			val := b.Get(pos)
+			if val == board.EmptyCell {
+				sb.WriteString(`<td class="empty"></td>`)
+			} else {
+				fmt.Fprintf(&sb, "<td>%d</td>", val)
+			}
+		}
+		sb.WriteString("</tr>")
+	}
+	sb.WriteString("</table></div>")
+	return template.HTML(sb.String())
+}
+
+// generateHTML creates an HTML file with puzzles using templates.
 func generateHTML(filename string, puzzles []*board.Board, difficulties []int, theme string) error {
 	file, err := os.Create(filename)
 	if err != nil {
@@ -85,7 +142,7 @@ func generateHTML(filename string, puzzles []*board.Board, difficulties []int, t
 	}
 	defer file.Close()
 
-	// Determine theme-specific values
+	// Determine theme-specific values.
 	var titlePrefix, bodyFont, headingFont, themeClass string
 	switch strings.ToLower(theme) {
 	case "princess":
@@ -100,151 +157,36 @@ func generateHTML(filename string, puzzles []*board.Board, difficulties []int, t
 		themeClass = ""
 	}
 
-	// Write HTML header
-	_, err = fmt.Fprintf(file, `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>%s</title>
-    <style>
-        body {
-            font-family: %s;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f5f5f5;
-        }
-        .page {
-            page-break-after: always;
-            background-color: white;
-            padding: 40px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .page:last-child {
-            page-break-after: auto;
-        }
-        h1 {
-            font-family: %s;
-            color: #333;
-            margin-bottom: 10px;
-            text-align: center;
-        }
-        .difficulty {
-            text-align: center;
-            color: #555;
-            font-size: 1.1em;
-            margin-bottom: 30px;
-            font-weight: bold;
-        }
-        h2 {
-            color: #666;
-            margin-top: 20px;
-            margin-bottom: 15px;
-            font-size: 1.2em;
-        }
-        .puzzle-container {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            margin: 30px 0;
-        }
-        .sudoku-grid {
-            display: inline-block;
-            border: 3px solid #000;
-            font-family: 'Courier New', monospace;
-            font-size: 28px;
-            line-height: 1.5;
-        }
-        .sudoku-grid table {
-            border-collapse: collapse;
-            margin: 0 auto;
-        }
-        .sudoku-grid td {
-            width: 50px;
-            height: 50px;
-            text-align: center;
-            vertical-align: middle;
-            border: 1px solid #333;
-            padding: 0;
-        }
-        .sudoku-grid td.empty {
-            color: #ccc;
-        }
-        .sudoku-grid tr:nth-child(3n) td {
-            border-bottom: 2px solid #000;
-        }
-        .sudoku-grid td:nth-child(3n) {
-            border-right: 2px solid #000;
-        }
-        @media print {
-            body {
-                background-color: white;
-            }
-            .page {
-                margin-bottom: 0;
-                box-shadow: none;
-            }
-        }
-    </style>
-</head>
-<body class="%s">
-`, titlePrefix+"s", bodyFont, headingFont, themeClass)
+	// Pre-render each puzzle board into HTML so the template stays logic-free.
+	pages := make([]PuzzlePage, len(puzzles))
+	for i, p := range puzzles {
+		pages[i] = PuzzlePage{
+			PuzzleNumber: i + 1,
+			Difficulty:   difficulties[i],
+			GridHTML:     boardToHTML(p),
+		}
+	}
+
+	tmpl, err := template.ParseFS(templateFS, "templates/puzzles.html")
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to parse template: %w", err)
 	}
 
-	// Write each puzzle on its own page (without solutions)
-	for i := 0; i < len(puzzles); i++ {
-		_, err = fmt.Fprintf(file, `    <div class="page">
-        <h1>%s #%d</h1>
-        <div class="difficulty">Difficulty: %d</div>
-        <div class="puzzle-container">
-            %s
-        </div>
-    </div>
-`, titlePrefix, i+1, difficulties[i], boardToHTML(puzzles[i]))
-		if err != nil {
-			return err
-		}
+	data := TemplateData{
+		TitlePrefix: titlePrefix,
+		BodyFont:    bodyFont,
+		HeadingFont: headingFont,
+		ThemeClass:  themeClass,
+		PuzzlePages: pages,
 	}
 
-	// Write HTML footer
-	_, err = fmt.Fprintf(file, `</body>
-</html>
-`)
-	return err
+	if err := tmpl.Execute(file, data); err != nil {
+		return fmt.Errorf("failed to execute template: %w", err)
+	}
+
+	return nil
 }
 
-// boardToHTML converts a board to an HTML table representation
-func boardToHTML(b *board.Board) string {
-	var sb strings.Builder
-	sb.WriteString("<div class=\"sudoku-grid\"><table>")
-
-	for row := 0; row < 9; row++ {
-		sb.WriteString("<tr>")
-		for col := 0; col < 9; col++ {
-			pos := board.MakePos(row, col)
-			val := b.Get(pos)
-			cellClass := ""
-			cellContent := ""
-
-			if val == board.EmptyCell {
-				cellClass = "empty"
-				cellContent = ""
-			} else {
-				cellContent = fmt.Sprintf("%d", val)
-			}
-
-			sb.WriteString(fmt.Sprintf("<td class=\"%s\">%s</td>", cellClass, cellContent))
-		}
-		sb.WriteString("</tr>")
-	}
-
-	sb.WriteString("</table></div>")
-	return sb.String()
-}
 
 func runGen(cmd *cobra.Command, args []string) error {
 	// Parse clue count range
@@ -284,8 +226,22 @@ func runGen(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("generation failed: %w", err)
 		}
 
-		// Calculate difficulty
+		// Calculate difficulty, retrying generation if the puzzle falls outside
+		// the accepted range. The retry cap prevents an infinite loop in cases
+		// where the requested clue count cannot produce puzzles in range.
 		difficulty := solver.Difficulty(puzzle)
+		retries := 0
+		for (difficulty < difficultyMin || difficulty > difficultyMax) && retries < difficultyMaxRetries {
+			puzzle, solution, err = gen.Generate()
+			if err != nil {
+				return fmt.Errorf("generation failed during difficulty retry: %w", err)
+			}
+			difficulty = solver.Difficulty(puzzle)
+			retries++
+		}
+		if difficulty < difficultyMin || difficulty > difficultyMax {
+			return fmt.Errorf("could not generate puzzle with difficulty in [%d, %d] after %d attempts", difficultyMin, difficultyMax, difficultyMaxRetries)
+		}
 
 		if outputHTML {
 			// Store puzzles for HTML output
@@ -322,7 +278,7 @@ func runGen(cmd *cobra.Command, args []string) error {
 		// Extract sorted puzzles and difficulties
 		sortedPuzzles := make([]*board.Board, len(puzzleList))
 		sortedDifficulties := make([]int, len(puzzleList))
-		for i := 0; i < len(puzzleList); i++ {
+		for i := range puzzleList {
 			sortedPuzzles[i] = puzzleList[i].puzzle
 			sortedDifficulties[i] = puzzleList[i].difficulty
 		}
