@@ -118,8 +118,8 @@ func parseClueCountRange(s string) (min, max int, err error) {
 
 // boardToHTML converts a board to a safe HTML table for embedding in the template.
 // For jigsaw layouts, each cell receives directional border classes (border-top,
-// border-right, border-bottom, border-left) where the cell abuts a different region,
-// and a region-N class for background shading.
+// border-right, border-bottom, border-left) wherever the cell abuts a different
+// region — these produce bold printed region boundaries.
 // For standard layouts the existing nth-child CSS handles thick 3×3-box borders.
 func boardToHTML(b *board.Board) template.HTML {
 	layout := b.Layout()
@@ -140,9 +140,6 @@ func boardToHTML(b *board.Board) template.HTML {
 				classes = append(classes, "empty")
 			}
 			if isJigsaw {
-				// Add region shading class.
-				classes = append(classes, fmt.Sprintf("region-%d", region))
-
 				// Add a directional border class for each edge where the
 				// adjacent cell belongs to a different region (or is outside
 				// the grid, which also marks a boundary).

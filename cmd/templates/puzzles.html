@@ -2,100 +2,105 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{.TitlePrefix}}s</title>
     <style>
+        /* Base styles are already print-friendly: white backgrounds, no shadows,
+           no screen-only chrome. The @media print block only handles page layout. */
+
+        * {
+            box-sizing: border-box;
+        }
+
         body {
             font-family: {{.BodyFont}};
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f5f5f5;
+            background-color: white;
+            color: black;
+            margin: 0;
+            padding: 0;
         }
+
         .page {
             page-break-after: always;
-            background-color: white;
-            padding: 40px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 48px 56px;
+            width: 100%;
         }
+
         .page:last-child {
             page-break-after: auto;
         }
+
         h1 {
             font-family: {{.HeadingFont}};
-            color: #333;
-            margin-bottom: 10px;
+            font-size: 1.6em;
+            color: black;
+            margin: 0 0 8px 0;
             text-align: center;
         }
+
         .difficulty {
             text-align: center;
-            color: #555;
-            font-size: 1.1em;
-            margin-bottom: 30px;
+            color: black;
+            font-size: 1em;
+            margin-bottom: 32px;
             font-weight: bold;
         }
+
         .puzzle-container {
             display: flex;
             justify-content: center;
             align-items: center;
-            margin: 30px 0;
+            margin: 24px 0;
         }
+
         .sudoku-grid {
             display: inline-block;
-            border: 3px solid #000;
+            border: 3px solid black;
             font-family: 'Courier New', monospace;
-            font-size: 28px;
-            line-height: 1.5;
+            font-size: 26px;
+            line-height: 1;
         }
+
         .sudoku-grid table {
             border-collapse: collapse;
             margin: 0 auto;
         }
+
         .sudoku-grid td {
             width: 50px;
             height: 50px;
             text-align: center;
             vertical-align: middle;
-            border: 1px solid #333;
+            /* Light inner grid lines between all cells */
+            border: 1px solid #999;
             padding: 0;
         }
+
+        /* Empty cells show no content — keep them invisible rather than using
+           a light colour that may not reproduce well on all printers. */
         .sudoku-grid td.empty {
-            color: #ccc;
+            color: transparent;
         }
+
+        /* Standard layout: bold lines every third row/column define the 3×3 boxes. */
         .sudoku-grid tr:nth-child(3n) td {
-            border-bottom: 2px solid #000;
+            border-bottom: 3px solid black;
         }
         .sudoku-grid td:nth-child(3n) {
-            border-right: 2px solid #000;
+            border-right: 3px solid black;
         }
 
-        /* Jigsaw region borders: applied when adjacent cells belong to different
-           regions. These override the thin default border on the matching edge. */
-        .sudoku-grid td.border-top    { border-top:    3px solid #000; }
-        .sudoku-grid td.border-right  { border-right:  3px solid #000; }
-        .sudoku-grid td.border-bottom { border-bottom: 3px solid #000; }
-        .sudoku-grid td.border-left   { border-left:   3px solid #000; }
-
-        /* Jigsaw region background shading — 9 alternating light colours so
-           neighbouring regions are visually distinct even before solving. */
-        .sudoku-grid td.region-0 { background-color: #ddeeff; }
-        .sudoku-grid td.region-1 { background-color: #ffeedd; }
-        .sudoku-grid td.region-2 { background-color: #ddffee; }
-        .sudoku-grid td.region-3 { background-color: #ffddee; }
-        .sudoku-grid td.region-4 { background-color: #eeffdd; }
-        .sudoku-grid td.region-5 { background-color: #eeddff; }
-        .sudoku-grid td.region-6 { background-color: #ffd9d9; }
-        .sudoku-grid td.region-7 { background-color: #d9ffd9; }
-        .sudoku-grid td.region-8 { background-color: #fffacc; }
+        /* Jigsaw region boundaries: bold edge wherever two cells belong to
+           different regions. These override the thin default border above. */
+        .sudoku-grid td.border-top    { border-top:    3px solid black; }
+        .sudoku-grid td.border-right  { border-right:  3px solid black; }
+        .sudoku-grid td.border-bottom { border-bottom: 3px solid black; }
+        .sudoku-grid td.border-left   { border-left:   3px solid black; }
 
         @media print {
-            body {
-                background-color: white;
-            }
-            .page {
-                margin-bottom: 0;
-                box-shadow: none;
+            /* Prevent the browser from inserting extra margins around the page.
+               The .page padding provides the printed margin instead. */
+            @page {
+                margin: 0;
             }
         }
     </style>
