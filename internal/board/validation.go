@@ -14,27 +14,27 @@ var (
 // IsValid reports whether a board satisfies Sudoku constraints.
 // Empty cells are ignored for validation.
 func (b *Board) IsValid() bool {
-	var rowCheck, colCheck, boxCheck [9]uint
+	var rowCheck, colCheck, regionCheck [9]uint
 
-	for pos := 0; pos < CellCount; pos++ {
+	for pos := range CellCount {
 		val := b.Get(pos)
 		if val == EmptyCell {
 			continue
 		}
 
-		row, col, box := posToRow[pos], posToCol[pos], posToBox[pos]
+		row, col, region := posToRow[pos], posToCol[pos], b.layout.PosToRegion[pos]
 		mask := uint(1 << (val - 1))
 
-		// Check for duplicates
+		// Check for duplicates in row, column, or region
 		if rowCheck[row]&mask != 0 ||
 			colCheck[col]&mask != 0 ||
-			boxCheck[box]&mask != 0 {
+			regionCheck[region]&mask != 0 {
 			return false
 		}
 
 		rowCheck[row] |= mask
 		colCheck[col] |= mask
-		boxCheck[box] |= mask
+		regionCheck[region] |= mask
 	}
 
 	return true

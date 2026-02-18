@@ -43,6 +43,7 @@ var (
 	clueCount  string
 	outputFile string
 	theme      string
+	boardType  string
 	timeout    time.Duration
 )
 
@@ -69,7 +70,8 @@ func init() {
 Examples:
   sudoku gen --clueCount 40
   sudoku gen -n 5 --clueCount 30
-  sudoku gen --clueCount 20 --timeout 15s`,
+  sudoku gen --clueCount 20 --timeout 15s
+  sudoku gen --type jigsaw -n 4 -o puzzles.html`,
 		RunE: runGen,
 	}
 
@@ -77,6 +79,7 @@ Examples:
 	genCmd.Flags().StringVarP(&clueCount, "clueCount", "c", fmt.Sprintf("%d", generator.DefaultClueCount), "Number of clues 17-80 or range like 28:32")
 	genCmd.Flags().StringVarP(&outputFile, "output", "o", "", "Output file (e.g., puzzles.html)")
 	genCmd.Flags().StringVarP(&theme, "theme", "t", "", "Theme for HTML output (e.g., princess)")
+	genCmd.Flags().StringVar(&boardType, "type", "standard", "Board type: standard or jigsaw")
 	genCmd.Flags().DurationVar(&timeout, "timeout", 10*time.Second, "Generation timeout per puzzle")
 
 	rootCmd.AddCommand(genCmd)
@@ -114,7 +117,14 @@ func parseClueCountRange(s string) (min, max int, err error) {
 }
 
 // boardToHTML converts a board to a safe HTML table for embedding in the template.
+// For jigsaw layouts, each cell receives directional border classes (border-top,
+// border-right, border-bottom, border-left) where the cell abuts a different region,
+// and a region-N class for background shading.
+// For standard layouts the existing nth-child CSS handles thick 3×3-box borders.
 func boardToHTML(b *board.Board) template.HTML {
+	layout := b.Layout()
+	isJigsaw := layout.Type == "jigsaw"
+
 	var sb strings.Builder
 	sb.WriteString(`<div class="sudoku-grid"><table>`)
 	for row := range 9 {
@@ -122,10 +132,43 @@ func boardToHTML(b *board.Board) template.HTML {
 		for col := range 9 {
 			pos := board.MakePos(row, col)
 			val := b.Get(pos)
+			region := layout.PosToRegion[pos]
+
+			// Build CSS class list for this cell.
+			var classes []string
 			if val == board.EmptyCell {
-				sb.WriteString(`<td class="empty"></td>`)
+				classes = append(classes, "empty")
+			}
+			if isJigsaw {
+				// Add region shading class.
+				classes = append(classes, fmt.Sprintf("region-%d", region))
+
+				// Add a directional border class for each edge where the
+				// adjacent cell belongs to a different region (or is outside
+				// the grid, which also marks a boundary).
+				if row == 0 || layout.PosToRegion[board.MakePos(row-1, col)] != region {
+					classes = append(classes, "border-top")
+				}
+				if row == 8 || layout.PosToRegion[board.MakePos(row+1, col)] != region {
+					classes = append(classes, "border-bottom")
+				}
+				if col == 0 || layout.PosToRegion[board.MakePos(row, col-1)] != region {
+					classes = append(classes, "border-left")
+				}
+				if col == 8 || layout.PosToRegion[board.MakePos(row, col+1)] != region {
+					classes = append(classes, "border-right")
+				}
+			}
+
+			classAttr := ""
+			if len(classes) > 0 {
+				classAttr = ` class="` + strings.Join(classes, " ") + `"`
+			}
+
+			if val == board.EmptyCell {
+				fmt.Fprintf(&sb, "<td%s></td>", classAttr)
 			} else {
-				fmt.Fprintf(&sb, "<td>%d</td>", val)
+				fmt.Fprintf(&sb, "<td%s>%d</td>", classAttr, val)
 			}
 		}
 		sb.WriteString("</tr>")
@@ -187,8 +230,19 @@ func generateHTML(filename string, puzzles []*board.Board, difficulties []int, t
 	return nil
 }
 
-
 func runGen(cmd *cobra.Command, args []string) error {
+	// Resolve the board layout from the --type flag.
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	var layout *board.Layout
+	switch boardType {
+	case "jigsaw":
+		layout = board.RandomJigsawLayout(rng)
+	case "standard", "":
+		layout = board.StandardLayout()
+	default:
+		return fmt.Errorf("unknown board type %q: must be standard or jigsaw", boardType)
+	}
+
 	// Parse clue count range
 	minClues, maxClues, err := parseClueCountRange(clueCount)
 	if err != nil {
@@ -209,7 +263,6 @@ func runGen(cmd *cobra.Command, args []string) error {
 	outputHTML := outputFile != ""
 
 	// Generate puzzles
-	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	for i := 0; i < numPuzzles; i++ {
 		// Randomly select clue count from range if it's a range
 		selectedClueCount := minClues
@@ -219,6 +272,7 @@ func runGen(cmd *cobra.Command, args []string) error {
 
 		opts := generator.DefaultOptions(selectedClueCount)
 		opts.Timeout = timeout
+		opts.Layout = layout
 		gen := generator.New(opts)
 
 		puzzle, solution, err := gen.Generate()

@@ -49,8 +49,9 @@ func (s *Solver) Solve() (*board.Board, error) {
 		return nil, ErrInvalidPuzzle
 	}
 
-	// If the board is empty, fill 27 independent cells for efficiency
-	if s.Board.EmptyCount() == board.CellCount {
+	// fillThreeBoxes seeds 3 diagonal 3×3 boxes simultaneously — valid only for
+	// standard layouts where those boxes share no row, column, or region constraints.
+	if s.Board.EmptyCount() == board.CellCount && s.Board.Layout().Type == "standard" {
 		s.fillThreeBoxes()
 	}
 
@@ -104,7 +105,7 @@ func (s *Solver) PropagateConstraints() error {
 func (s *Solver) applyNakedSingles() bool {
 	changed := false
 
-	for pos := 0; pos < board.CellCount; pos++ {
+	for pos := range board.CellCount {
 		if s.Board.Get(pos) == board.EmptyCell {
 			mask := s.Board.GetCandidatesMask(pos)
 
@@ -128,14 +129,14 @@ func (s *Solver) applyNakedSingles() bool {
 func (s *Solver) applyHiddenSingles() bool {
 	changed := false
 
-	for row := 0; row < 9; row++ {
+	for row := range 9 {
 		changed = s.findHiddenSinglesInRow(row) || changed
 	}
-	for col := 0; col < 9; col++ {
+	for col := range 9 {
 		changed = s.findHiddenSinglesInCol(col) || changed
 	}
-	for box := 0; box < 9; box++ {
-		changed = s.findHiddenSinglesInBox(box) || changed
+	for region := range 9 {
+		changed = s.findHiddenSinglesInRegion(region) || changed
 	}
 
 	return changed
@@ -148,7 +149,7 @@ func (s *Solver) findHiddenSinglesInRow(row int) bool {
 	// Track where each value can go
 	valuePossibilities := make([][]int, 10)
 
-	for col := 0; col < 9; col++ {
+	for col := range 9 {
 		if s.Board.Get(board.MakePos(row, col)) == board.EmptyCell {
 			candidates := s.Board.GetCandidates(board.MakePos(row, col))
 			for _, val := range candidates {
@@ -176,7 +177,7 @@ func (s *Solver) findHiddenSinglesInCol(col int) bool {
 	// Track where each value can go
 	valuePossibilities := make([][]int, 10)
 
-	for row := 0; row < 9; row++ {
+	for row := range 9 {
 		if s.Board.Get(board.MakePos(row, col)) == board.EmptyCell {
 			candidates := s.Board.GetCandidates(board.MakePos(row, col))
 			for _, val := range candidates {
@@ -197,22 +198,19 @@ func (s *Solver) findHiddenSinglesInCol(col int) bool {
 	return changed
 }
 
-// findHiddenSinglesInBox checks for hidden singles in the provided 3x3 box.
-func (s *Solver) findHiddenSinglesInBox(box int) bool {
+// findHiddenSinglesInRegion checks for hidden singles in the provided region.
+// For standard layouts, regions are 3×3 boxes; for jigsaw layouts, regions are
+// arbitrary contiguous shapes. Cell enumeration uses RegionCells so the algorithm
+// is identical for both variants.
+func (s *Solver) findHiddenSinglesInRegion(region int) bool {
 	changed := false
 	valuePossibilities := make([][]int, 10)
 
-	startPos := 3*(box%3) + 27*int(box/3)
-	startRow := int(startPos / 9)
-	startCol := startPos % 9
-
-	for dr := 0; dr < 3; dr++ {
-		for dc := 0; dc < 3; dc++ {
-			if s.Board.Get(board.MakePos(startRow+dr, startCol+dc)) == board.EmptyCell {
-				candidates := s.Board.GetCandidates(board.MakePos(startRow+dr, startCol+dc))
-				for _, val := range candidates {
-					valuePossibilities[val] = append(valuePossibilities[val], (startRow+dr)*9+startCol+dc)
-				}
+	for _, pos := range s.Board.RegionCells(region) {
+		if s.Board.Get(pos) == board.EmptyCell {
+			candidates := s.Board.GetCandidates(pos)
+			for _, val := range candidates {
+				valuePossibilities[val] = append(valuePossibilities[val], pos)
 			}
 		}
 	}
@@ -230,7 +228,7 @@ func (s *Solver) findHiddenSinglesInBox(box int) bool {
 
 // hasContradiction checks if the board has reached an invalid state.
 func (s *Solver) hasContradiction() bool {
-	for pos := 0; pos < board.CellCount; pos++ {
+	for pos := range board.CellCount {
 		if s.Board.Get(pos) == board.EmptyCell && s.Board.GetCandidatesMask(pos) == 0 {
 			return true
 		}
@@ -286,7 +284,7 @@ func (s *Solver) FindMRVCell() (int, []int) {
 	mrvCount := 10
 	var mrvCandidates []int
 
-	for pos := 0; pos < board.CellCount; pos++ {
+	for pos := range board.CellCount {
 		if s.Board.Get(pos) == board.EmptyCell {
 			candidates := s.Board.GetCandidates(pos)
 			count := len(candidates)

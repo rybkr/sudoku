@@ -21,35 +21,45 @@ const (
 type Board struct {
 	cells [CellCount]int
 
-	// Bitmasks track placed digits in each unit (row/col/box).
+	// layout describes which region each cell belongs to.
+	// It is set at construction time and never mutated; clones share the pointer.
+	layout *Layout
+
+	// Bitmasks track placed digits in each unit (row/col/region).
 	// Bit i represents digit i+1 (bit 0 = digit 1, bit 8 = digit 9).
 	// This allows for O(1) validation.
-	rowMasks [9]uint
-	colMasks [9]uint
-	boxMasks [9]uint
+	rowMasks    [9]uint
+	colMasks    [9]uint
+	regionMasks [9]uint
 
 	// emptyCount tracks unfilled cells for quick completion checks.
 	// Once initialized, emptyCount should only be touched inside Set and Clear.
 	emptyCount int
 }
 
-// New creates an empty Board.
-func New() *Board {
+// New creates an empty Board with the given layout.
+// If layout is nil, StandardLayout is used.
+func New(layout *Layout) *Board {
+	if layout == nil {
+		layout = StandardLayout()
+	}
 	b := &Board{
 		emptyCount: CellCount,
+		layout:     layout,
 	}
 	return b
 }
 
-// NewFromString creates a Board from an 81-character string.
+// NewFromString creates a Board from an 81-character string with the given layout.
 // Use '.' or '0' for empty cells, '1'-'9' for filled cells.
-func NewFromString(s string) (*Board, error) {
+// If layout is nil, StandardLayout is used.
+func NewFromString(s string, layout *Layout) (*Board, error) {
 	if len(s) != CellCount {
 		return nil, fmt.Errorf("string must be exactly %d characters, got %d", CellCount, len(s))
 	}
 
-	b := New()
-	for pos := 0; pos < CellCount; pos++ {
+	b := New(layout)
+	for pos := range CellCount {
 		ch := s[pos]
 		switch ch {
 		case '.', '0':
@@ -67,12 +77,23 @@ func NewFromString(s string) (*Board, error) {
 }
 
 // Clone creates an independent copy of the Board.
+// The layout pointer is shared — Layout is immutable after construction.
 func (b *Board) Clone() *Board {
 	if b == nil {
 		return nil
 	}
 	clone := *b
 	return &clone
+}
+
+// Layout returns the board's Layout.
+func (b *Board) Layout() *Layout {
+	return b.layout
+}
+
+// RegionCells returns the 9 cell positions belonging to the given region.
+func (b *Board) RegionCells(region int) [9]int {
+	return b.layout.RegionToCells[region]
 }
 
 // Set attempts to place a value 1-9 at the given position.
@@ -91,25 +112,25 @@ func (b *Board) Set(pos, val int) error {
 		b.Clear(pos)
 	}
 
-	row, col, box := posToRow[pos], posToCol[pos], posToBox[pos]
+	row, col, region := posToRow[pos], posToCol[pos], b.layout.PosToRegion[pos]
 	mask := uint(1 << (val - 1))
 
-	// Check if value already exists in row, column, or box for Sudoku rules
+	// Check if value already exists in row, column, or region for Sudoku rules
 	if b.rowMasks[row]&mask != 0 {
 		return fmt.Errorf("%w: value %d already in row %d", ErrIllegalMove, val, row)
 	}
 	if b.colMasks[col]&mask != 0 {
 		return fmt.Errorf("%w: value %d already in column %d", ErrIllegalMove, val, col)
 	}
-	if b.boxMasks[box]&mask != 0 {
-		return fmt.Errorf("%w: value %d already in box %d", ErrIllegalMove, val, box)
+	if b.regionMasks[region]&mask != 0 {
+		return fmt.Errorf("%w: value %d already in region %d", ErrIllegalMove, val, region)
 	}
 
 	// Modify the board only once we know it's legal to do so
 	b.cells[pos] = val
 	b.rowMasks[row] |= mask
 	b.colMasks[col] |= mask
-	b.boxMasks[box] |= mask
+	b.regionMasks[region] |= mask
 	b.emptyCount--
 
 	return nil
@@ -118,13 +139,13 @@ func (b *Board) Set(pos, val int) error {
 // SetForce places a value without validation checks.
 // Use only when certain the move is valid.
 func (b *Board) SetForce(pos, val int) {
-	row, col, box := posToRow[pos], posToCol[pos], posToBox[pos]
+	row, col, region := posToRow[pos], posToCol[pos], b.layout.PosToRegion[pos]
 	mask := uint(1 << (val - 1))
 
 	b.cells[pos] = val
 	b.rowMasks[row] |= mask
 	b.colMasks[col] |= mask
-	b.boxMasks[box] |= mask
+	b.regionMasks[region] |= mask
 	b.emptyCount--
 }
 
@@ -142,13 +163,13 @@ func (b *Board) Clear(pos int) error {
 		return nil
 	}
 
-	row, col, box := posToRow[pos], posToCol[pos], posToBox[pos]
+	row, col, region := posToRow[pos], posToCol[pos], b.layout.PosToRegion[pos]
 	mask := uint(1 << (val - 1))
 
 	b.cells[pos] = EmptyCell
 	b.rowMasks[row] &^= mask
 	b.colMasks[col] &^= mask
-	b.boxMasks[box] &^= mask
+	b.regionMasks[region] &^= mask
 	b.emptyCount++
 
 	return nil
@@ -169,8 +190,8 @@ func (b *Board) GetCandidatesMask(pos int) uint {
 	if !isValidPosition(pos) {
 		return 0
 	}
-	row, col, box := posToRow[pos], posToCol[pos], posToBox[pos]
-	return allNine &^ b.rowMasks[row] &^ b.colMasks[col] &^ b.boxMasks[box]
+	row, col, region := posToRow[pos], posToCol[pos], b.layout.PosToRegion[pos]
+	return allNine &^ b.rowMasks[row] &^ b.colMasks[col] &^ b.regionMasks[region]
 }
 
 // GetCandidates returns a slice of candidates 1-9 for a given position.
@@ -219,9 +240,9 @@ func (b *Board) Format() string {
 	line := "+-------+-------+-------+\n"
 	sb.WriteString(line)
 
-	for row := 0; row < 9; row++ {
+	for row := range 9 {
 		sb.WriteString("| ")
-		for col := 0; col < 9; col++ {
+		for col := range 9 {
 			val := b.Get(MakePos(row, col))
 			if val == EmptyCell {
 				sb.WriteByte('.')
@@ -244,11 +265,12 @@ func (b *Board) Format() string {
 	return sb.String()
 }
 
-// Precomputed lookup tables for position mapping
+// Precomputed lookup tables for row and column mapping.
+// These are layout-independent since rows and columns are the same for
+// all board variants; only region membership varies and is stored in Layout.
 var (
 	posToRow [CellCount]int
 	posToCol [CellCount]int
-	posToBox [CellCount]int
 )
 
 // MakePos transforms a row and column into a linear position.
@@ -260,12 +282,10 @@ func MakePos(row, col int) int {
 	return 9*row + col
 }
 
-// init initializes lookup tables for position-to-unit mappings.
-// Should be called once at program start.
+// init initializes lookup tables for position-to-row and position-to-column.
 func init() {
-	for pos := 0; pos < CellCount; pos++ {
-		posToRow[pos] = int(pos / 9)
-		posToCol[pos] = int(pos % 9)
-		posToBox[pos] = 3*int(pos/27) + int((pos%9)/3)
+	for pos := range CellCount {
+		posToRow[pos] = pos / 9
+		posToCol[pos] = pos % 9
 	}
 }

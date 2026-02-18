@@ -69,6 +69,26 @@
         .sudoku-grid td:nth-child(3n) {
             border-right: 2px solid #000;
         }
+
+        /* Jigsaw region borders: applied when adjacent cells belong to different
+           regions. These override the thin default border on the matching edge. */
+        .sudoku-grid td.border-top    { border-top:    3px solid #000; }
+        .sudoku-grid td.border-right  { border-right:  3px solid #000; }
+        .sudoku-grid td.border-bottom { border-bottom: 3px solid #000; }
+        .sudoku-grid td.border-left   { border-left:   3px solid #000; }
+
+        /* Jigsaw region background shading — 9 alternating light colours so
+           neighbouring regions are visually distinct even before solving. */
+        .sudoku-grid td.region-0 { background-color: #ddeeff; }
+        .sudoku-grid td.region-1 { background-color: #ffeedd; }
+        .sudoku-grid td.region-2 { background-color: #ddffee; }
+        .sudoku-grid td.region-3 { background-color: #ffddee; }
+        .sudoku-grid td.region-4 { background-color: #eeffdd; }
+        .sudoku-grid td.region-5 { background-color: #eeddff; }
+        .sudoku-grid td.region-6 { background-color: #ffd9d9; }
+        .sudoku-grid td.region-7 { background-color: #d9ffd9; }
+        .sudoku-grid td.region-8 { background-color: #fffacc; }
+
         @media print {
             body {
                 background-color: white;

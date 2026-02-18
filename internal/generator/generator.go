@@ -83,7 +83,8 @@ func (g *Generator) Generate() (puzzle *board.Board, solution *board.Board, err 
 
 // generateSolution creates a complete valid Sudoku board.
 func (g *Generator) generateSolution() (*board.Board, error) {
-	b := board.New()
+	// Pass the layout so the solver operates with the correct region structure.
+	b := board.New(g.options.Layout)
 
 	// Use solver with randomization to generate a complete board
 	s := solver.New(b, &solver.Options{
