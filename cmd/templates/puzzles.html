@@ -109,7 +109,7 @@
 <body class="{{.ThemeClass}}">
 {{range .PuzzlePages}}
     <div class="page">
-        <h1>{{$.TitlePrefix}} #{{.PuzzleNumber}}</h1>
+        <h1>{{.Title}} #{{.PuzzleNumber}}</h1>
         <div class="difficulty">Difficulty: {{.Difficulty}}</div>
         <div class="puzzle-container">
             {{.GridHTML}}

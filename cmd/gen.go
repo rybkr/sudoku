@@ -24,6 +24,7 @@ var templateFS embed.FS
 
 // PuzzlePage holds pre-rendered data for a single puzzle page in the HTML template.
 type PuzzlePage struct {
+    Title        string
 	PuzzleNumber int
 	Difficulty   int
 	GridHTML     template.HTML
@@ -78,7 +79,7 @@ Examples:
 	genCmd.Flags().IntVarP(&numPuzzles, "number", "n", 1, "Number of puzzles to generate")
 	genCmd.Flags().StringVarP(&clueCount, "clueCount", "c", fmt.Sprintf("%d", generator.DefaultClueCount), "Number of clues 17-80 or range like 28:32")
 	genCmd.Flags().StringVarP(&outputFile, "output", "o", "", "Output file (e.g., puzzles.html)")
-	genCmd.Flags().StringVarP(&theme, "theme", "t", "", "Theme for HTML output (e.g., princess)")
+	genCmd.Flags().StringVarP(&theme, "theme", "t", "", "Theme for HTML output (e.g., princess-lily)")
 	genCmd.Flags().StringVar(&boardType, "type", "standard", "Board type: standard or jigsaw")
 	genCmd.Flags().DurationVar(&timeout, "timeout", 10*time.Second, "Generation timeout per puzzle")
 
@@ -186,14 +187,33 @@ func generateHTML(filename string, puzzles []*board.Board, difficulties []int, t
 	}
 	defer file.Close()
 
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+
 	// Determine theme-specific values.
 	var titlePrefix, bodyFont, headingFont, themeClass string
+	var titleMessages []string
 	switch strings.ToLower(theme) {
-	case "princess":
-		titlePrefix = "Princess Puzzle"
+	case "princess-lily":
+		titlePrefix = "Princess Lily's Puzzle"
 		bodyFont = "'Georgia', 'Times New Roman', serif"
 		headingFont = "'Playfair Display', 'Georgia', serif"
 		themeClass = "princess-theme"
+		titleMessages = []string{
+			"Beautiful Princess Lily's Puzzle",
+			"Lovely Princess Lily's Puzzle",
+			"Adorable Princess Lily's Puzzle",
+			"Enchanting Princess Lily's Puzzle",
+			"Dazzling Princess Lily's Puzzle",
+			"Glorious Princess Lily's Puzzle",
+			"Radiant Princess Lily's Puzzle",
+			"Charming Princess Lily's Puzzle",
+			"Darling Princess Lily's Puzzle",
+			"Magnificent Princess Lily's Puzzle",
+			"Sweetest Princess Lily's Puzzle",
+			"Wonderful Princess Lily's Puzzle",
+			"Angelic Princess Lily's Puzzle",
+			"Angel Cat Lily's Puzzle",
+		}
 	default:
 		titlePrefix = "Sudoku Puzzle"
 		bodyFont = "Arial, sans-serif"
@@ -204,7 +224,12 @@ func generateHTML(filename string, puzzles []*board.Board, difficulties []int, t
 	// Pre-render each puzzle board into HTML so the template stays logic-free.
 	pages := make([]PuzzlePage, len(puzzles))
 	for i, p := range puzzles {
+		title := titlePrefix
+		if len(titleMessages) > 0 {
+			title = titleMessages[rng.Intn(len(titleMessages))]
+		}
 		pages[i] = PuzzlePage{
+			Title:        title,
 			PuzzleNumber: i + 1,
 			Difficulty:   difficulties[i],
 			GridHTML:     boardToHTML(p),
